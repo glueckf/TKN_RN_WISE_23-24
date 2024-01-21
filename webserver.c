@@ -69,7 +69,7 @@ DHTEntry dhtEntries[MAX_DHT_ENTRIES];
 int dhtEntriesCount = 0;
 
 // Diese Funktion dient hauptsächlich zum Debuggen und gibt die aktuellen DHT-Einträge aus.
-void printDHTEntries() {
+void printDHTEntries(void) {
     fprintf(stderr, "Aktuelle DHT-Einträge:\n");  // Ausgabe der Überschrift für die DHT-Einträge.
     for (int i = 0; i < dhtEntriesCount; i++) {
         fprintf(stderr, "Eintrag %d: Hash ID: %u, Knoten-IP: %s, Knoten-Port: %d\n", i, dhtEntries[i].id, dhtEntries[i].node.ip, dhtEntries[i].node.port);
@@ -90,8 +90,7 @@ void printDHTEntries() {
  *          Aktualisiert einen vorhandenen Eintrag oder fügt einen neuen Eintrag hinzu und gibt einen Zeiger auf das aktualisierte Buffer zurück.
  */
 void updateDHTEntry(uint16_t hashId, NodeInfo node) {
-    fprintf(stderr, "Aktualisierung des DHT-Eintrags für Hash-ID: %u\n"); // Ausgabe der Aktualisierungsinformationen für Debugging-Zwecke.
-    fflush(stderr); // Sicherstellen, dass die Ausgabe sofort aktualisiert wird.
+
     printDHTEntries(); // Ausgabe der aktuellen DHT-Einträge vor der Aktualisierung.
 
     // Durchlaufen der vorhandenen DHT-Einträge, um den Eintrag mit der gegebenen Hash-ID zu finden.
@@ -376,7 +375,8 @@ int is_responsible_for_uri(uint16_t uri_hash) {
     if ((twoNodeDHTInfo.pred.id < uri_hash && uri_hash <= twoNodeDHTInfo.peer.id) ||
         ((twoNodeDHTInfo.pred.id > twoNodeDHTInfo.peer.id) && (uri_hash > twoNodeDHTInfo.pred.id || uri_hash <= twoNodeDHTInfo.peer.id))) {
         return 0; // Der aktuelle Knoten ist für die URI verantwortlich.
-    } else if (twoNodeDHTInfo.peer.id < uri_hash && uri_hash <= twoNodeDHTInfo.succ.id) {
+    } else if ((twoNodeDHTInfo.peer.id < uri_hash && uri_hash <= twoNodeDHTInfo.succ.id)||
+        ((twoNodeDHTInfo.peer.id > twoNodeDHTInfo.succ.id) && (uri_hash > twoNodeDHTInfo.peer.id || uri_hash <= twoNodeDHTInfo.succ.id))) {
         return 1; // Der Nachfolgerknoten ist für die URI verantwortlich.
     }
     return 2; // Weder der aktuelle Knoten noch der Nachfolgerknoten sind für die URI verantwortlich.
@@ -399,13 +399,13 @@ void send_reply(int conn, struct request* request) {
     fflush(stderr); 
 
     uint16_t uri_hash = hash_uri(request->uri);
-
+    
     int is_responsible = is_responsible_for_uri(uri_hash); 
 
     if (is_responsible == 0) {
 
     
-            if (strcmp(request->method, "GET") == 0) {
+        if (strcmp(request->method, "GET") == 0) {
             // Find the resource with the given URI in the 'resources' array.
             size_t resource_length;
             const char* resource = get(request->uri, resources, MAX_RESOURCES, &resource_length);
@@ -547,7 +547,7 @@ void handle_udp_message(UdpMessage *message) {
  * @example UdpMessage msg = prepare_udp_message(receivedBuffer, receivedLength);
  *          Bereitet eine UdpMessage-Struktur vor, indem sie die empfangenen Bytes aus dem Puffer extrahiert.
  */
-UdpMessage prepare_udp_message(uint8_t* buffer, ssize_t len) {
+UdpMessage prepare_udp_message(uint8_t* buffer) {
     
     // Kopieren der ersten 11 Bytes aus dem Puffer in ein separates Byte-Array
     uint8_t byteArray[11];
@@ -580,7 +580,7 @@ UdpMessage prepare_udp_message(uint8_t* buffer, ssize_t len) {
     UdpMessage message = {
         .messageType = message_Type,
         .nodeId = sender_Node,
-        .nodeIp = ipString,
+        .nodeIp = {ipString},
         .nodePort = portInt,
         .hashId = hashID
     };
@@ -736,6 +736,7 @@ static struct sockaddr_in derive_sockaddr(const char* host, const char* port) {
     return result;
 }
 
+
 /**
  * Sets up a TCP server socket and binds it to the provided sockaddr_in address.
  *
@@ -782,17 +783,23 @@ static int setup_server_socket(struct sockaddr_in addr) {
     return sock;
 }
 
+
+/**
+ * Set up a UDP server socket and bind it to the provided sockaddr_in address.
+ *
+ * @param addr The sockaddr_in structure representing the IP address and port of the server.
+ *
+ * @return The file descriptor of the created UDP server socket.
+ */
 static int setup_server_socket_udp(struct sockaddr_in addr) {
-    // Erstellen eines UDP-Sockets
+    // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == -1) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
 
-//
-
-    // Binden des Sockets an die bereitgestellte Adresse
+    // Bind the socket to the provided address
     if (bind(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1) {
         perror("bind");
         close(sock);
@@ -801,6 +808,7 @@ static int setup_server_socket_udp(struct sockaddr_in addr) {
 
     return sock;
 }
+
 
 /**
 *  The program expects 4; otherwise, it returns EXIT_FAILURE.
@@ -907,10 +915,10 @@ int main(int argc, char** argv) {
                     perror("We didnt receive any data..."); 
                     exit(EXIT_FAILURE); 
                 }else {
-                    fprintf(stderr, "We got a \n"); 
+                    fprintf(stderr, "We got a connection\n"); 
                     fflush(stderr); 
 
-                    UdpMessage message = prepare_udp_message(buffer, len);
+                    UdpMessage message = prepare_udp_message(buffer);
                     handle_udp_message(&message);
                 }
             } else if (s == state.sock) {
